@@ -44,8 +44,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
-	"github.com/joelanford/helm-operator/pkg/internal/sdk/controllerutil"
-	"github.com/joelanford/helm-operator/pkg/manifestutil"
+	"github.com/operator-framework/helm-operator-plugins/internal/sdk/controllerutil"
+	"github.com/operator-framework/helm-operator-plugins/pkg/manifestutil"
 )
 
 type ActionClientGetter interface {
@@ -273,9 +273,17 @@ func createPatch(existing runtime.Object, expected *resource.Info) ([]byte, apit
 	if err != nil {
 		return nil, apitypes.StrategicMergePatchType, err
 	}
-
 	patch, err := strategicpatch.CreateThreeWayMergePatch(expectedJSON, expectedJSON, existingJSON, patchMeta, true)
-	return patch, apitypes.StrategicMergePatchType, err
+	if err != nil {
+		return nil, apitypes.StrategicMergePatchType, err
+	}
+
+	// An empty patch could be in the form of "{}" which represents an empty map out of the 3-way merge;
+	// filter them out here too to avoid sending the apiserver empty patch requests.
+	if len(patch) == 0 || bytes.Equal(patch, []byte("{}")) {
+		return nil, apitypes.StrategicMergePatchType, nil
+	}
+	return patch, apitypes.StrategicMergePatchType, nil
 }
 
 func createJSONMergePatch(existingJSON, expectedJSON []byte) ([]byte, error) {

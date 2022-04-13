@@ -24,11 +24,11 @@ limitations under the License.
 //    r, err := reconciler.New(
 //	    reconciler.WithChart(*w.Chart),
 //	    reconciler.WithGroupVersionKind(w.GroupVersionKind),
-//	    reconciler.WithInstallAnnotations(annotation.InstallDisableHooks{}),
+//	    reconciler.WithInstallAnnotations(annotation.InstallDisableHook{}),
 //	  )
 //
 // If the reconciler detects an annotation named "helm.sdk.operatorframework.io/install-disable-hooks"
-// on the watched custom resource, it sets the install.DisableHooks option to the annotations value. For more information
+// on the watched custom resource it sets the install.DisableHooks option to the annotations value. For more information
 // take a look at the InstallDisableHooks.InstallOption method.
 //
 //   kind: OperatorHelmKind
@@ -45,7 +45,7 @@ import (
 
 	"helm.sh/helm/v3/pkg/action"
 
-	helmclient "github.com/joelanford/helm-operator/pkg/client"
+	helmclient "github.com/operator-framework/helm-operator-plugins/pkg/client"
 )
 
 var (

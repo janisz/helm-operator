@@ -22,7 +22,8 @@ import (
 	"errors"
 	"strconv"
 
-	. "github.com/onsi/ginkgo"
+	"github.com/go-logr/logr"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/chartutil"
@@ -43,7 +44,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/yaml"
 
-	"github.com/joelanford/helm-operator/pkg/internal/testutil"
+	"github.com/operator-framework/helm-operator-plugins/pkg/internal/testutil"
 )
 
 const mockTestDesc = "Test Description"
@@ -59,7 +60,7 @@ var _ = Describe("ActionClient", func() {
 	})
 	var _ = Describe("NewActionClientGetter", func() {
 		It("should return a valid ActionConfigGetter", func() {
-			actionConfigGetter := NewActionConfigGetter(cfg, rm, nil)
+			actionConfigGetter := NewActionConfigGetter(cfg, rm, logr.Discard())
 			Expect(NewActionClientGetter(actionConfigGetter)).NotTo(BeNil())
 		})
 	})
@@ -85,7 +86,7 @@ var _ = Describe("ActionClient", func() {
 			obj = testutil.BuildTestCR(gvk)
 		})
 		It("should return a valid ActionClient", func() {
-			acg := NewActionClientGetter(NewActionConfigGetter(cfg, rm, nil))
+			acg := NewActionClientGetter(NewActionConfigGetter(cfg, rm, logr.Discard()))
 			ac, err := acg.ActionClientFor(obj)
 			Expect(err).To(BeNil())
 			Expect(ac).NotTo(BeNil())
@@ -103,7 +104,7 @@ var _ = Describe("ActionClient", func() {
 			obj = testutil.BuildTestCR(gvk)
 
 			var err error
-			actionConfigGetter := NewActionConfigGetter(cfg, rm, nil)
+			actionConfigGetter := NewActionConfigGetter(cfg, rm, logr.Discard())
 			acg := NewActionClientGetter(actionConfigGetter)
 			ac, err = acg.ActionClientFor(obj)
 			Expect(err).To(BeNil())
@@ -144,7 +145,7 @@ var _ = Describe("ActionClient", func() {
 				})
 				It("should uninstall a failed install", func() {
 					By("failing to install the release", func() {
-						chrt := testutil.MustLoadChart("../../testdata/test-chart-0.1.0.tgz")
+						chrt := testutil.MustLoadChart("../../pkg/internal/testdata/test-chart-1.2.0.tgz")
 						chrt.Templates[2].Data = append(chrt.Templates[2].Data, []byte("\ngibberish")...)
 						r, err := ac.Install(obj.GetName(), obj.GetNamespace(), &chrt, vals)
 						Expect(err).NotTo(BeNil())
@@ -256,7 +257,7 @@ var _ = Describe("ActionClient", func() {
 				})
 				It("should rollback a failed upgrade", func() {
 					By("failing to install the release", func() {
-						vals = chartutil.Values{"service": map[string]interface{}{"type": "ClusterIP"}}
+						vals := chartutil.Values{"service": map[string]interface{}{"type": "FooBar"}}
 						r, err := ac.Upgrade(obj.GetName(), obj.GetNamespace(), &chrt, vals)
 						Expect(err).NotTo(BeNil())
 						Expect(r).To(BeNil())
@@ -470,7 +471,7 @@ var _ = Describe("ActionClient", func() {
 			}
 			patch, patchType, err := createPatch(o1, o2)
 			Expect(err).To(BeNil())
-			Expect(string(patch)).To(Equal(`{}`))
+			Expect(patch).To(BeNil())
 			Expect(patchType).To(Equal(apitypes.StrategicMergePatchType))
 		})
 		It("replaces incorrect fields in core types", func() {
@@ -511,7 +512,7 @@ var _ = Describe("ActionClient", func() {
 			}
 			patch, patchType, err := createPatch(o1, o2)
 			Expect(err).To(BeNil())
-			Expect(string(patch)).To(Equal(`{}`))
+			Expect(patch).To(BeNil())
 			Expect(patchType).To(Equal(apitypes.StrategicMergePatchType))
 		})
 	})

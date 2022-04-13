@@ -19,8 +19,8 @@ package hook_test
 import (
 	"strings"
 
-	"github.com/go-logr/logr/testing"
-	. "github.com/onsi/ginkgo"
+	"github.com/go-logr/logr"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	sdkhandler "github.com/operator-framework/operator-lib/handler"
 	"helm.sh/helm/v3/pkg/release"
@@ -29,9 +29,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 
-	"github.com/joelanford/helm-operator/pkg/hook"
-	"github.com/joelanford/helm-operator/pkg/internal/sdk/fake"
-	internalhook "github.com/joelanford/helm-operator/pkg/reconciler/internal/hook"
+	"github.com/operator-framework/helm-operator-plugins/pkg/hook"
+	"github.com/operator-framework/helm-operator-plugins/pkg/internal/fake"
+	internalhook "github.com/operator-framework/helm-operator-plugins/pkg/reconciler/internal/hook"
 )
 
 var _ = Describe("Hook", func() {
@@ -42,13 +42,13 @@ var _ = Describe("Hook", func() {
 			rm    *meta.DefaultRESTMapper
 			owner *unstructured.Unstructured
 			rel   *release.Release
-			log   *testing.TestLogger
+			log   logr.Logger
 		)
 
 		BeforeEach(func() {
 			rm = meta.NewDefaultRESTMapper([]schema.GroupVersion{})
 			c = &fake.Controller{}
-			log = &testing.TestLogger{}
+			log = logr.Discard()
 		})
 
 		Context("with unknown APIs", func() {
@@ -215,6 +215,24 @@ var _ = Describe("Hook", func() {
 					Expect(c.WatchCalls[1].Handler).To(BeAssignableToTypeOf(&sdkhandler.EnqueueRequestForAnnotation{}))
 					Expect(c.WatchCalls[2].Handler).To(BeAssignableToTypeOf(&sdkhandler.EnqueueRequestForAnnotation{}))
 				})
+				It("should iterate the kind list and be able to set watches on each item", func() {
+					rel = &release.Release{
+						Manifest: strings.Join([]string{replicaSetList}, "---\n"),
+					}
+					drw = internalhook.NewDependentResourceWatcher(c, rm)
+					Expect(drw.Exec(owner, *rel, log)).To(Succeed())
+					Expect(c.WatchCalls).To(HaveLen(2))
+					Expect(c.WatchCalls[0].Handler).To(BeAssignableToTypeOf(&handler.EnqueueRequestForOwner{}))
+					Expect(c.WatchCalls[1].Handler).To(BeAssignableToTypeOf(&handler.EnqueueRequestForOwner{}))
+				})
+				It("should error when unable to list objects", func() {
+					rel = &release.Release{
+						Manifest: strings.Join([]string{errReplicaSetList}, "---\n"),
+					}
+					drw = internalhook.NewDependentResourceWatcher(c, rm)
+					err := drw.Exec(owner, *rel, log)
+					Expect(err).To(HaveOccurred())
+				})
 			})
 		})
 	})
@@ -280,5 +298,25 @@ metadata:
   name: testClusterRoleBinding
   annotations:
     helm.sh/resource-policy: keep
+`
+	replicaSetList = `
+apiVersion: v1
+kind: List
+items:
+  - apiVersion: apps/v1
+    kind: ReplicaSet
+    metadata:
+      name: testReplicaSet1
+      namespace: ownerNamespace
+  - apiVersion: apps/v1
+    kind: ReplicaSet
+    metadata:
+      name: testReplicaSet2
+      namespace: ownerNamespace
+`
+	errReplicaSetList = `
+apiVersion: v1
+kind: List
+items:
 `
 )

@@ -18,13 +18,13 @@ package hook_test
 
 import (
 	"github.com/go-logr/logr"
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"helm.sh/helm/v3/pkg/chartutil"
 	"helm.sh/helm/v3/pkg/release"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
-	. "github.com/joelanford/helm-operator/pkg/hook"
+	. "github.com/operator-framework/helm-operator-plugins/pkg/hook"
 )
 
 var _ = Describe("Hook", func() {
@@ -35,7 +35,7 @@ var _ = Describe("Hook", func() {
 				called = true
 				return nil
 			})
-			Expect(h.Exec(nil, nil, nil)).To(Succeed())
+			Expect(h.Exec(nil, nil, logr.Discard())).To(Succeed())
 			Expect(called).To(BeTrue())
 		})
 	})
@@ -46,7 +46,7 @@ var _ = Describe("Hook", func() {
 				called = true
 				return nil
 			})
-			Expect(h.Exec(nil, release.Release{}, nil)).To(Succeed())
+			Expect(h.Exec(nil, release.Release{}, logr.Discard())).To(Succeed())
 			Expect(called).To(BeTrue())
 		})
 	})

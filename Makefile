@@ -25,16 +25,34 @@ TOOLS_BIN_DIR=$(TOOLS_DIR)/bin
 SCRIPTS_DIR=$(TOOLS_DIR)/scripts
 export PATH := $(BUILD_DIR):$(TOOLS_BIN_DIR):$(SCRIPTS_DIR):$(PATH)
 
+##@ Development
+
+.PHONY: generate
+generate: build # Generate CLI docs and samples
+	rm -rf testdata/
+	go run ./hack/generate/samples/generate_testdata.go
+	go generate ./...
+
 .PHONY: all
 all: test lint build
 
 # Run tests
 .PHONY: test
-export KUBEBUILDER_ASSETS := $(TOOLS_BIN_DIR)
+# Use envtest based on the version of kubernetes/client-go configured in the go.mod file.
+# If this version of envtest is not available yet, submit a PR similar to
+# https://github.com/kubernetes-sigs/kubebuilder/pull/2287 targeting the kubebuilder
+# "tools-releases" branch. Make sure to look up the appropriate etcd version in the
+# kubernetes release notes for the minor version you're building tools for.
+ENVTEST_VERSION = $(shell go list -m k8s.io/client-go | cut -d" " -f2 | sed 's/^v0\.\([[:digit:]]\{1,\}\)\.[[:digit:]]\{1,\}$$/1.\1.x/')
 TESTPKG ?= ./...
-CR_VERSION=$(shell go list -m sigs.k8s.io/controller-runtime | cut -d" " -f2 | sed 's/^v//')
-test:
-	fetch envtest $(CR_VERSION) && go test -race -covermode atomic -coverprofile cover.out $(TESTPKG)
+test: build
+	go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+	eval $$(setup-envtest use -p env $(ENVTEST_VERSION)) && go test -race -covermode atomic -coverprofile cover.out $(TESTPKG)
+
+.PHONY: test-sanity
+test-sanity: generate fix lint ## Test repo formatting, linting, etc.
+	go vet ./...
+	git diff --exit-code # diff again to ensure other checks don't change repo
 
 # Build manager binary
 .PHONY: build
@@ -51,12 +69,12 @@ fix:
 # Run various checks against code
 .PHONY: lint
 lint:
-	fetch golangci-lint 1.35.2 && golangci-lint run
+	fetch golangci-lint 1.43.0 && golangci-lint run
 
 .PHONY: release
-release: GORELEASER_ARGS ?= --snapshot --rm-dist
+release: GORELEASER_ARGS ?= --snapshot --rm-dist --skip-sign
 release:
-	fetch goreleaser 0.156.2 && goreleaser $(GORELEASER_ARGS)
+	fetch goreleaser 0.177.0 && goreleaser $(GORELEASER_ARGS)
 
 .PHONY: clean
 clean:

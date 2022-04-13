@@ -24,7 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"os"
 
-	"github.com/joelanford/helm-operator/pkg/values"
+	"github.com/operator-framework/helm-operator-plugins/pkg/values"
 )
 
 var DefaultMapper = values.MapperFunc(func(v chartutil.Values) chartutil.Values { return v })

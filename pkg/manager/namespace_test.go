@@ -24,8 +24,7 @@ import (
 	"sync"
 
 	"github.com/go-logr/logr"
-	"github.com/go-logr/logr/testing"
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -34,13 +33,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	. "github.com/joelanford/helm-operator/pkg/manager"
+	. "github.com/operator-framework/helm-operator-plugins/pkg/manager"
 )
 
 var _ = Describe("ConfigureWatchNamespaces", func() {
 	var (
 		opts manager.Options
-		log  logr.Logger = &testing.NullLogger{}
+		log  = logr.Discard()
 	)
 
 	BeforeEach(func() {

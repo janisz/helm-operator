@@ -13,7 +13,7 @@ jobs:
     - name: Set up Go 1.x
       uses: actions/setup-go@v2
       with:
-        go-version: ~1.16
+        go-version: ~1.17
       id: go
 
     - name: Check out code into the Go module directory
@@ -36,6 +36,9 @@ jobs:
 
     - name: Test
       run: make test
+
+    - name: Test Sanity
+      run: make test-sanity
 
     - uses: shogo82148/actions-goveralls@v1
       with:
@@ -69,4 +72,4 @@ jobs:
       with:
         fetch-depth: 0
     - name: Run go-apidiff
-      uses: joelanford/go-apidiff@master
+      uses: joelanford/go-apidiff@main

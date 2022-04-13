@@ -26,9 +26,9 @@ import (
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/joelanford/helm-operator/pkg/extensions"
-	"github.com/joelanford/helm-operator/pkg/internal/sdk/controllerutil"
-	"github.com/joelanford/helm-operator/pkg/internal/sdk/status"
+	"github.com/operator-framework/helm-operator-plugins/internal/sdk/controllerutil"
+	"github.com/operator-framework/helm-operator-plugins/pkg/extensions"
+	"github.com/operator-framework/helm-operator-plugins/pkg/internal/status"
 )
 
 func New(client client.Client) Updater {

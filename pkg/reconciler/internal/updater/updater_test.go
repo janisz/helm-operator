@@ -19,7 +19,7 @@ package updater
 import (
 	"context"
 
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"helm.sh/helm/v3/pkg/release"
 	corev1 "k8s.io/api/core/v1"
@@ -29,7 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/joelanford/helm-operator/pkg/reconciler/internal/conditions"
+	"github.com/operator-framework/helm-operator-plugins/pkg/reconciler/internal/conditions"
 )
 
 const testFinalizer = "testFinalizer"

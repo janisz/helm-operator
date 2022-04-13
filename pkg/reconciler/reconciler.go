@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/operator-framework/helm-operator-plugins/pkg/extensions"
 	"strings"
 	"sync"
 	"time"
@@ -43,18 +44,18 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	ctrlpredicate "sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	"github.com/joelanford/helm-operator/pkg/annotation"
-	helmclient "github.com/joelanford/helm-operator/pkg/client"
-	"github.com/joelanford/helm-operator/pkg/extensions"
-	"github.com/joelanford/helm-operator/pkg/hook"
-	"github.com/joelanford/helm-operator/pkg/internal/sdk/controllerutil"
-	"github.com/joelanford/helm-operator/pkg/reconciler/internal/conditions"
-	internalhook "github.com/joelanford/helm-operator/pkg/reconciler/internal/hook"
-	"github.com/joelanford/helm-operator/pkg/reconciler/internal/updater"
-	internalvalues "github.com/joelanford/helm-operator/pkg/reconciler/internal/values"
-	"github.com/joelanford/helm-operator/pkg/values"
+	"github.com/operator-framework/helm-operator-plugins/internal/sdk/controllerutil"
+	"github.com/operator-framework/helm-operator-plugins/pkg/annotation"
+	helmclient "github.com/operator-framework/helm-operator-plugins/pkg/client"
+	"github.com/operator-framework/helm-operator-plugins/pkg/hook"
+	"github.com/operator-framework/helm-operator-plugins/pkg/reconciler/internal/conditions"
+	internalhook "github.com/operator-framework/helm-operator-plugins/pkg/reconciler/internal/hook"
+	"github.com/operator-framework/helm-operator-plugins/pkg/reconciler/internal/updater"
+	internalvalues "github.com/operator-framework/helm-operator-plugins/pkg/reconciler/internal/values"
+	"github.com/operator-framework/helm-operator-plugins/pkg/values"
 )
 
 const uninstallFinalizer = "uninstall-helm-release"
@@ -72,16 +73,19 @@ type Reconciler struct {
 	preExtensions  []extensions.ReconcileExtension
 	postExtensions []extensions.ReconcileExtension
 
-	log                     logr.Logger
-	gvk                     *schema.GroupVersionKind
-	chrt                    *chart.Chart
-	overrideValues          map[string]string
-	skipDependentWatches    bool
-	extraWatches            []watchDescription
-	maxConcurrentReconciles int
-	reconcilePeriod         time.Duration
-	markFailedAfter         time.Duration
-	maxHistory              int
+	extraWatches    []watchDescription
+	markFailedAfter time.Duration
+
+	log                              logr.Logger
+	gvk                              *schema.GroupVersionKind
+	chrt                             *chart.Chart
+	selectorPredicate                predicate.Predicate
+	overrideValues                   map[string]string
+	skipDependentWatches             bool
+	maxConcurrentReconciles          int
+	reconcilePeriod                  time.Duration
+	maxHistory                       int
+	skipPrimaryGVKSchemeRegistration bool
 
 	stripManifestFromStatus bool
 
@@ -148,6 +152,9 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager, opts SetupOpts) error {
 
 	r.addDefaults(mgr, controllerName)
 	if !opts.DisableSetupScheme {
+		r.setupScheme(mgr)
+	}
+	if !r.skipPrimaryGVKSchemeRegistration {
 		r.setupScheme(mgr)
 	}
 
@@ -271,6 +278,52 @@ func WithOverrideValues(overrides map[string]string) Option {
 func SkipDependentWatches(skip bool) Option {
 	return func(r *Reconciler) error {
 		r.skipDependentWatches = skip
+		return nil
+	}
+}
+
+// SkipPrimaryGVKSchemeRegistration is an Option that allows to disable the default behaviour of
+// registering unstructured.Unstructured as underlying type for the GVK scheme.
+//
+// Disabling this built-in registration is necessary when building operators
+// for which it is desired to have the underlying GVK scheme backed by a
+// custom struct type.
+//
+// Example for using a custom type for the GVK scheme instead of unstructured.Unstructured:
+//
+//   // Define custom type for GVK scheme.
+//   //+kubebuilder:object:root=true
+//   type Custom struct {
+//     // [...]
+//   }
+//
+//   // Register custom type along with common meta types in scheme.
+//   scheme := runtime.NewScheme()
+//   scheme.AddKnownTypes(SchemeGroupVersion, &Custom{})
+//   metav1.AddToGroupVersion(scheme, SchemeGroupVersion)
+//
+//   // Create new manager using the controller-runtime, injecting above scheme.
+//   options := ctrl.Options{
+//     Scheme = scheme,
+//     // [...]
+//   }
+//   mgr, err := ctrl.NewManager(config, options)
+//
+//   // Create reconciler with generic scheme registration being disabled.
+//   r, err := reconciler.New(
+//     reconciler.WithChart(chart),
+//     reconciler.SkipPrimaryGVKSchemeRegistration(true),
+//     // [...]
+//   )
+//
+//   // Setup reconciler with above manager.
+//   err = r.SetupWithManager(mgr)
+//
+// By default, skipping of the generic scheme setup is disabled, which means that
+// unstructured.Unstructured is used for the GVK scheme.
+func SkipPrimaryGVKSchemeRegistration(skip bool) Option {
+	return func(r *Reconciler) error {
+		r.skipPrimaryGVKSchemeRegistration = skip
 		return nil
 	}
 }
@@ -503,6 +556,19 @@ func WithExtraWatch(src source.Source, handler handler.EventHandler, predicates 
 	}
 }
 
+// WithSelector is an Option that configures the reconciler to creates a
+// predicate that is used to filter resources based on the specified selector
+func WithSelector(s metav1.LabelSelector) Option {
+	return func(r *Reconciler) error {
+		p, err := ctrlpredicate.LabelSelectorPredicate(s)
+		if err != nil {
+			return err
+		}
+		r.selectorPredicate = p
+		return nil
+	}
+}
+
 // Reconcile reconciles a CR that defines a Helm v3 release.
 //
 //   - If a release does not exist for this CR, a new release is installed.
@@ -529,14 +595,13 @@ func WithExtraWatch(src source.Source, handler handler.EventHandler, predicates 
 //   - Irreconcilable - an error occurred during reconciliation
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.Result, err error) {
 	log := r.log.WithValues(strings.ToLower(r.gvk.Kind), req.NamespacedName)
-	debugLog := log.V(1)
-	debugLog.Info("reconciling...")
+	log.V(1).Info("Reconciliation triggered")
 
 	obj := &unstructured.Unstructured{}
 	obj.SetGroupVersionKind(*r.gvk)
 	err = r.client.Get(ctx, req.NamespacedName, obj)
 	if apierrors.IsNotFound(err) {
-		debugLog.Info("resource not found, nothing to do")
+		log.V(1).Info("Resource %s/%s not found, nothing to do", req.NamespacedName.Namespace, req.NamespacedName.Name)
 		return ctrl.Result{}, nil
 	}
 	if err != nil {
@@ -942,7 +1007,7 @@ func (r *Reconciler) addDefaults(mgr ctrl.Manager, controllerName string) {
 	if r.client == nil {
 		r.client = mgr.GetClient()
 	}
-	if r.log == nil {
+	if r.log.GetSink() == nil {
 		r.log = ctrl.Log.WithName("controllers").WithName("Helm")
 	}
 	if r.actionClientGetter == nil {
@@ -968,9 +1033,16 @@ func (r *Reconciler) setupScheme(mgr ctrl.Manager) {
 func (r *Reconciler) setupWatches(mgr ctrl.Manager, c controller.Controller) error {
 	obj := &unstructured.Unstructured{}
 	obj.SetGroupVersionKind(*r.gvk)
+
+	var preds []ctrlpredicate.Predicate
+	if r.selectorPredicate != nil {
+		preds = append(preds, r.selectorPredicate)
+	}
+
 	if err := c.Watch(
 		&source.Kind{Type: obj},
 		&sdkhandler.InstrumentedEnqueueRequestForObject{},
+		preds...,
 	); err != nil {
 		return err
 	}
